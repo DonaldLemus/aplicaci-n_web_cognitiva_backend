@@ -300,7 +300,8 @@ public class CognitivaServices {
             String subject = "Reporte de Estado de Ánimo";
             Email to = new Email(correo);
             Content content = new Content("text/plain",
-                    "Adjunto encontrará su reporte de estados de ánimo recientes.");
+                    "Adjunto encontrará su reporte de estados de ánimo recientes, y reporte de actividades." +
+                            "Le recordamos que siempre realicé sus ejercicios cognitivos para mejorar su salud y bienestar");
 
             Mail mail = new Mail(from, subject, to, content);
 
