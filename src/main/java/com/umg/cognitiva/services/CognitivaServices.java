@@ -256,7 +256,8 @@ public class CognitivaServices {
             byte[] pdf = generateEstadoAnimoPdf(usuario);
             enviarEmail(usuario, pdf);
         }catch (Exception e){
-            return false;
+            System.out.println("ERROR " + e);
+            return false ;
         }
         return true;
     }
