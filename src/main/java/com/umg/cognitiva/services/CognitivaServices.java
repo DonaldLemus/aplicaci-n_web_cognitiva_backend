@@ -7,6 +7,14 @@ import com.itextpdf.text.DocumentException;
 import com.itextpdf.text.Paragraph;
 import com.itextpdf.text.pdf.PdfDocument;
 import com.itextpdf.text.pdf.PdfWriter;
+import com.sendgrid.Method;
+import com.sendgrid.Request;
+import com.sendgrid.Response;
+import com.sendgrid.SendGrid;
+import com.sendgrid.helpers.mail.Mail;
+import com.sendgrid.helpers.mail.objects.Attachments;
+import com.sendgrid.helpers.mail.objects.Content;
+import com.sendgrid.helpers.mail.objects.Email;
 import com.umg.cognitiva.dto.*;
 import com.umg.cognitiva.model.*;
 import com.umg.cognitiva.repository.*;
@@ -282,19 +290,43 @@ public class CognitivaServices {
                 correos.add(adicional.getCorreo());
             }
         }
-        
-        // Enviar email
+
+        // Configuración SendGrid
+        String apiKey = System.getenv("SENDGRID_API_KEY");
+        SendGrid sg = new SendGrid(apiKey);
+
         for (String correo : correos) {
-            MimeMessage message = mailSender.createMimeMessage();
-            MimeMessageHelper helper = new MimeMessageHelper(message, true);
-            helper.setTo(correo);
-            helper.setSubject("Reporte de Estado de Ánimo");
-            helper.setText("Adjunto encontrará su reporte de estados de ánimo recientes.");
+            Email from = new Email("pruebasjuan82@gmail.com"); // remitente autorizado en SendGrid
+            String subject = "Reporte de Estado de Ánimo";
+            Email to = new Email(correo);
+            Content content = new Content("text/plain",
+                    "Adjunto encontrará su reporte de estados de ánimo recientes.");
 
-            DataSource attachment = new ByteArrayDataSource(baos, "application/pdf");
-            helper.addAttachment("reporte_estado_animo.pdf", attachment);
+            Mail mail = new Mail(from, subject, to, content);
 
-            mailSender.send(message);
+            // Adjuntar PDF
+            Attachments attachment = new Attachments();
+            attachment.setContent(Base64.getEncoder().encodeToString(baos));
+            attachment.setType("application/pdf");
+            attachment.setFilename("reporte_estado_animo.pdf");
+            attachment.setDisposition("attachment");
+            mail.addAttachments(attachment);
+
+            Request request = new Request();
+            try {
+                request.setMethod(Method.POST);
+                request.setEndpoint("mail/send");
+                request.setBody(mail.build());
+                Response response = sg.api(request);
+
+                System.out.println("Correo enviado a: " + correo);
+                System.out.println("Status: " + response.getStatusCode());
+                if (response.getStatusCode() >= 400) {
+                    System.out.println("Error Body: " + response.getBody());
+                }
+            } catch (IOException ex) {
+                throw new Exception("Error enviando correo a " + correo, ex);
+            }
         }
     }
 
