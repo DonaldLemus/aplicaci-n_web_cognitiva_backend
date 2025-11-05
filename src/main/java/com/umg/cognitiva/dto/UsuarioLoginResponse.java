@@ -12,4 +12,5 @@ public class UsuarioLoginResponse {
     private String nombre;
     private String correo;
     private int total_puntos;
+    private String fotoPerfilUrl;
 }

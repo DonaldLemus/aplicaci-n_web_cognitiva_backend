@@ -5,16 +5,7 @@ import com.cloudinary.utils.ObjectUtils;
 import com.itextpdf.text.Document;
 import com.itextpdf.text.DocumentException;
 import com.itextpdf.text.Paragraph;
-import com.itextpdf.text.pdf.PdfDocument;
 import com.itextpdf.text.pdf.PdfWriter;
-import com.sendgrid.Method;
-import com.sendgrid.Request;
-import com.sendgrid.Response;
-import com.sendgrid.SendGrid;
-import com.sendgrid.helpers.mail.Mail;
-import com.sendgrid.helpers.mail.objects.Attachments;
-import com.sendgrid.helpers.mail.objects.Content;
-import com.sendgrid.helpers.mail.objects.Email;
 import com.umg.cognitiva.dto.*;
 import com.umg.cognitiva.model.*;
 import com.umg.cognitiva.repository.*;
@@ -22,6 +13,7 @@ import com.umg.cognitiva.utilerias.JwTokenProvider;
 import jakarta.activation.DataSource;
 import jakarta.mail.internet.MimeMessage;
 import jakarta.mail.util.ByteArrayDataSource;
+import jakarta.transaction.Transactional;
 import org.apache.tomcat.util.http.fileupload.ByteArrayOutputStream;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.mail.javamail.JavaMailSender;
@@ -31,7 +23,6 @@ import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
 import java.time.Duration;
-import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.*;
@@ -68,6 +59,9 @@ public class CognitivaServices {
 
     @Autowired
     private PersonalArbolRepository personalArbolRepository;
+
+    @Autowired
+    private InformacionMedicaRepository informacionMedicaRepository;
 
     // Método para actualizar un usuario existente
     public Optional<Usuario> actualizarInfoUsuario(Long id, Usuario usuarioActualizado) {
@@ -109,7 +103,7 @@ public class CognitivaServices {
         if (usuario.isPresent()) {
             Usuario u = (Usuario) usuario.get();
             String token = jwTokenProvider.generateToken(email);
-            UsuarioLoginResponse usuarioLoginResponse = new UsuarioLoginResponse(u.getId(), u.getNombre(), u.getCorreo(), u.getTotal_puntos());
+            UsuarioLoginResponse usuarioLoginResponse = new UsuarioLoginResponse(u.getId(), u.getNombre(), u.getCorreo(), u.getTotal_puntos(), u.getFotoPerfilUrl());
             loginResponse.setToken(token);
             loginResponse.setUsuarioLoginResponse(usuarioLoginResponse);
         } else {
@@ -264,8 +258,7 @@ public class CognitivaServices {
             byte[] pdf = generateEstadoAnimoPdf(usuario);
             enviarEmail(usuario, pdf);
         }catch (Exception e){
-            System.out.println("ERROR " + e);
-            return false ;
+            return false;
         }
         return true;
     }
@@ -290,50 +283,27 @@ public class CognitivaServices {
                 correos.add(adicional.getCorreo());
             }
         }
-
-        // Configuración SendGrid
-        String apiKey = System.getenv("SENDGRID_API_KEY");
-        SendGrid sg = new SendGrid(apiKey);
-
+        
+        // Enviar email
         for (String correo : correos) {
-            Email from = new Email("pruebasjuan82@gmail.com"); // remitente autorizado en SendGrid
-            String subject = "Reporte de Estado de Ánimo";
-            Email to = new Email(correo);
-            Content content = new Content("text/plain",
-                    "Adjunto encontrará su reporte de estados de ánimo recientes, y reporte de actividades." +
-                            "Le recordamos que siempre realicé sus ejercicios cognitivos para mejorar su salud y bienestar");
+            MimeMessage message = mailSender.createMimeMessage();
+            MimeMessageHelper helper = new MimeMessageHelper(message, true);
+            helper.setTo(correo);
+            helper.setSubject("Reporte de Estado de Ánimo");
+            helper.setText("Adjunto encontrará su reporte de estados de ánimo recientes.");
 
-            Mail mail = new Mail(from, subject, to, content);
+            DataSource attachment = new ByteArrayDataSource(baos, "application/pdf");
+            helper.addAttachment("reporte_estado_animo.pdf", attachment);
 
-            // Adjuntar PDF
-            Attachments attachment = new Attachments();
-            attachment.setContent(Base64.getEncoder().encodeToString(baos));
-            attachment.setType("application/pdf");
-            attachment.setFilename("reporte_estado_animo.pdf");
-            attachment.setDisposition("attachment");
-            mail.addAttachments(attachment);
-
-            Request request = new Request();
-            try {
-                request.setMethod(Method.POST);
-                request.setEndpoint("mail/send");
-                request.setBody(mail.build());
-                Response response = sg.api(request);
-
-                System.out.println("Correo enviado a: " + correo);
-                System.out.println("Status: " + response.getStatusCode());
-                if (response.getStatusCode() >= 400) {
-                    System.out.println("Error Body: " + response.getBody());
-                }
-            } catch (IOException ex) {
-                throw new Exception("Error enviando correo a " + correo, ex);
-            }
+            mailSender.send(message);
         }
     }
 
     public byte[] generateEstadoAnimoPdf(Long usuarioId) throws IOException, DocumentException {
         Usuario usuario = usuarioRepository.findById(usuarioId)
                 .orElseThrow(() -> new RuntimeException("Usuario no encontrado"));
+
+        Optional<InformacionMedica> infoOpt = informacionMedicaRepository.findByUsuario(usuario);
 
         List<EstadoAnimoUsuario> estados = estadoAnimoUsuarioRepository.findByUsuarioId(usuarioId);
         List<ResultadosXUsuario> resultados = resultadoRepository.findResultadosPorUsuario(usuarioId);
@@ -383,18 +353,76 @@ public class CognitivaServices {
             }
         }
 
+        // SALTO DE PÁGINA
+        document.newPage();
+        document.add(new Paragraph("Reporte de Informe Medico"));
+        document.add(new Paragraph("Usuario: " + usuario.getNombre() + " | Edad: " + usuario.getEdad()));
+        document.add(new Paragraph(" "));
+
+        // 🔽 Agregamos el registro médico si existe
+        if (infoOpt.isPresent()) {
+            InformacionMedica info = infoOpt.get();
+            document.add(new Paragraph("Fecha de nacimiento: " + info.getFechaNacimiento()));
+            document.add(new Paragraph("Dirección: " + (info.getDireccion() != null ? info.getDireccion() : "N/A")));
+            document.add(new Paragraph("Teléfono: " + (info.getTelefonoMovil() != null ? info.getTelefonoMovil() : "N/A")));
+            document.add(new Paragraph("Médico de cabecera: " +
+                    (info.getMedicoNombre() != null ? info.getMedicoNombre() : "N/A") +
+                    " | Tel: " + (info.getMedicoTelefono() != null ? info.getMedicoTelefono() : "N/A")));
+            document.add(new Paragraph(" "));
+
+            document.add(new Paragraph("Enfermedades crónicas: " + (info.getEnfermedadesCronicas() != null ? info.getEnfermedadesCronicas() : "Ninguna")));
+            document.add(new Paragraph("Medicamentos: " + (info.getMedicamentos() != null ? info.getMedicamentos() : "N/A")));
+            document.add(new Paragraph("Alergias alimentarias: " + (info.getAlergiasAlimentarias() != null ? info.getAlergiasAlimentarias() : "Ninguna")));
+            document.add(new Paragraph("Alergias ambientales: " + (info.getAlergiasAmbientales() != null ? info.getAlergiasAmbientales() : "Ninguna")));
+            document.add(new Paragraph(" "));
+
+            document.add(new Paragraph("Usa lentes: " + (info.getUsaLentes() ? "Sí" : "No")));
+            document.add(new Paragraph("Usa audífono: " + (info.getUsaAudifono() ? "Sí" : "No")));
+            document.add(new Paragraph("Usa prótesis dentadura: " + (info.getUsaProtesisDentadura() ? "Sí" : "No")));
+            document.add(new Paragraph("Dispositivo de movilidad: " + (info.getDispositivosMovilidad() != null ? info.getDispositivosMovilidad() : "Ninguno")));
+            document.add(new Paragraph(" "));
+
+            document.add(new Paragraph("Dieta especial: " + (info.getDietaEspecial() != null ? info.getDietaEspecial() : "Normal")));
+            document.add(new Paragraph("Nivel de movilidad: " + (info.getNivelMovilidad() != null ? info.getNivelMovilidad() : "Independiente")));
+            document.add(new Paragraph("Riesgo de caídas: " + (info.getRiesgoCaidas() != null ? info.getRiesgoCaidas() : "Bajo")));
+            document.add(new Paragraph("Puede ducharse solo: " + (info.getPuedeDucharseSolo() ? "Sí" : "No")));
+            document.add(new Paragraph("Se viste solo: " + (info.getSeVisteSolo() ? "Sí" : "No")));
+        } else {
+            document.add(new Paragraph("El usuario no tiene información médica registrada."));
+        }
+
         document.close();
         return baos.toByteArray();
     }
 
-    public String subirFotoYObtenerUrl(MultipartFile foto, Long idUsuario) throws IOException {
-        String carpeta = "cognitiva/personas/" + idUsuario;
+    public String subirFotoYObtenerUrl(MultipartFile foto, Long idUsuario, boolean isFoto) throws IOException {
+        String carpeta;
+        if(!isFoto){
+            carpeta = "cognitiva/personas/" + idUsuario;
+        } else {
+            carpeta = "cognitiva/personas/fotosPerfil/" + idUsuario + "/";
+        }
+
         System.out.println("subiendo foto");
         Map uploadResult = cloudinary.uploader().upload(foto.getBytes(), ObjectUtils.asMap(
                 "folder", carpeta,
                 "resource_type", "image"
         ));
         return (String) uploadResult.get("secure_url");
+    }
+
+
+    public String actualizarUrlFoto(MultipartFile foto, Long idUsuario){
+        Usuario usuario = usuarioRepository.findById(idUsuario).orElseThrow(() -> new RuntimeException("Usuario no encontrado"));
+        String url;
+        try {
+            url = subirFotoYObtenerUrl(foto, idUsuario, true);
+            usuario.setFotoPerfilUrl(url);
+            usuarioRepository.save(usuario);
+        } catch (Exception e){
+            return null;
+        }
+        return url;
     }
 
     public PersonaArbol agregarPersona(PersonaArbolDTO dto, MultipartFile foto) throws IOException {
@@ -414,12 +442,59 @@ public class CognitivaServices {
         System.out.println("FOTO SI EXISTE ANTES DE IF nombre" + foto.getOriginalFilename());
         if (foto != null && !foto.isEmpty()) {
             System.out.println("FOTO SI EXISTE");
-            String url = subirFotoYObtenerUrl(foto, dto.getIdUsuario()); // Reutilizamos esta lógica
+            String url = subirFotoYObtenerUrl(foto, dto.getIdUsuario(), false); // Reutilizamos esta lógica
             persona.setFotoUrl(url);
         }
 
         return personalArbolRepository.save(persona);
     }
+
+    @Transactional
+    public InformacionMedica guardarInformacion(InformacionMedicaDTO dto) {
+        Usuario usuario = usuarioRepository.findById(dto.getUsuarioId())
+                .orElseThrow(() -> new RuntimeException("Usuario no encontrado"));
+
+        if (informacionMedicaRepository.findByUsuario(usuario).isPresent()) {
+            throw new RuntimeException("Ya existe información médica registrada para este usuario.");
+        }
+
+        InformacionMedica info = new InformacionMedica();
+
+        info.setUsuario(usuario);
+        info.setFechaNacimiento(dto.getFechaNacimiento());
+        info.setNumeroIdentificacion(dto.getNumeroIdentificacion());
+        info.setDireccion(dto.getDireccion());
+        info.setTelefonoFijo(dto.getTelefonoFijo());
+        info.setTelefonoMovil(dto.getTelefonoMovil());
+        info.setContactoNombre(dto.getContactoNombre());
+        info.setContactoParentesco(dto.getContactoParentesco());
+        info.setContactoTelefono(dto.getContactoTelefono());
+        info.setMedicoNombre(dto.getMedicoNombre());
+        info.setMedicoTelefono(dto.getMedicoTelefono());
+
+        info.setEnfermedadesCronicas(dto.getEnfermedadesCronicas());
+        info.setMedicamentos(dto.getMedicamentos());
+        info.setAlergiasAlimentarias(dto.getAlergiasAlimentarias());
+        info.setAlergiasAmbientales(dto.getAlergiasAmbientales());
+        info.setUsaLentes(dto.isUsaLentes());
+        info.setUsaAudifono(dto.isUsaAudifono());
+        info.setUsaProtesisDentadura(dto.isUsaProtesisDentadura());
+        info.setDispositivosMovilidad(dto.getDispositivosMovilidad());
+
+        info.setDietaEspecial(dto.getDietaEspecial());
+        info.setNivelMovilidad(dto.getNivelMovilidad());
+        info.setRiesgoCaidas(dto.getRiesgoCaidas());
+        info.setRutinaEjercicio(dto.getRutinaEjercicio());
+        info.setPuedeDucharseSolo(dto.isPuedeDucharseSolo());
+        info.setSeVisteSolo(dto.isSeVisteSolo());
+
+        InformacionMedica informacionMedica = informacionMedicaRepository.save(info);
+
+        usuario.setFormularioMedicoCompletado(true);
+        usuarioRepository.save(usuario);
+
+        return informacionMedica;
+    }
 
 
 }

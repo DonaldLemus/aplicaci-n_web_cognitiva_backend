@@ -33,4 +33,10 @@ public class Usuario {
     @Column(name = "fecha_registro", nullable = false)
     private LocalDate fechaRegistro;
 
+    @Column(name = "foto_perfil_url", length = 500)
+    private String fotoPerfilUrl;
+
+    @Column(name = "formulario_medico_completado", nullable = false)
+    private boolean formularioMedicoCompletado = false;
+
 }

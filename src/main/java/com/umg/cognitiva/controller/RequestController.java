@@ -3,10 +3,7 @@ package com.umg.cognitiva.controller;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.itextpdf.text.DocumentException;
 import com.umg.cognitiva.dto.*;
-import com.umg.cognitiva.model.Actividad;
-import com.umg.cognitiva.model.PersonaArbol;
-import com.umg.cognitiva.model.Usuario;
-import com.umg.cognitiva.model.UsuarioCorreos;
+import com.umg.cognitiva.model.*;
 import com.umg.cognitiva.services.CognitivaServices;
 import jakarta.validation.Valid;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -90,9 +87,8 @@ public class RequestController {
 
     @PostMapping("/actualizarPuntos")
     public ResponseEntity<?> actualizarPuntosUsuario(@RequestBody Map<String, Object> parametros) {
-        // Convertir id y puntos con manejo adecuado de tipos
-        Long id = ((Number) parametros.get("id")).longValue();  // Convierte a Long
-        Integer puntos = (Integer) parametros.get("puntos");    // Mantenemos puntos como Integer
+        Long id = ((Number) parametros.get("id")).longValue();
+        Integer puntos = (Integer) parametros.get("puntos");
 
         Optional<Usuario> usuario = cognitivaServices.actualizarPuntos(id, puntos);
         return usuario.<ResponseEntity<?>>map(value -> new ResponseEntity<>("Puntos de usuario " + value.getNombre() + " actualizados con éxito", HttpStatus.OK)).orElseGet(() -> new ResponseEntity<>("Error al actualizar puntos", HttpStatus.BAD_REQUEST));
@@ -246,6 +242,31 @@ public class RequestController {
         }
     }
 
+    @PostMapping(value = "/agregarFoto", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    public ResponseEntity<?> agregarFoto(
+            @RequestPart("foto") MultipartFile foto,
+            @RequestPart("dto") Map<String, Object> dto) {
+        Map<String, Object> response = new HashMap<>();
+        try {
+            Long idUsuario = Long.valueOf(dto.get("idUsuario").toString());
+            String url = cognitivaServices.actualizarUrlFoto(foto, idUsuario);
+
+            if (url != null && !url.isEmpty()) {
+                response.put("message", url);
+                response.put("status", true);
+                return ResponseEntity.ok(response);
+            } else {
+                response.put("estado", "error");
+                response.put("status", false);
+                return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(response);
+            }
+        } catch (Exception e) {
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(Map.of("error", e.getMessage()));
+        }
+    }
+
+
     @PostMapping("/registrarCorreo")
     public ResponseEntity<?> agregarCorreo(@RequestBody UsuarioCorreoRequestDTO dto){
         Map<String, String> response = new HashMap<>();
@@ -266,5 +287,16 @@ public class RequestController {
         }
     }
 
-
+    @PostMapping("/registrarInformacionMedica")
+    public ResponseEntity<?> registrar(@RequestBody InformacionMedicaDTO dto) {
+        try {
+            InformacionMedica info = cognitivaServices.guardarInformacion(dto);
+            return ResponseEntity.ok(info);
+        } catch (RuntimeException e) {
+            return ResponseEntity.badRequest().body(Map.of(
+                    "success", false,
+                    "message", e.getMessage()
+            ));
+        }
+    }
 }
