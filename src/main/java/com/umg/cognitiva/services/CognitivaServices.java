@@ -283,7 +283,7 @@ public class CognitivaServices {
                 correos.add(adicional.getCorreo());
             }
         }
-        
+
         // Enviar email
         for (String correo : correos) {
             MimeMessage message = mailSender.createMimeMessage();
@@ -359,7 +359,6 @@ public class CognitivaServices {
         document.add(new Paragraph("Usuario: " + usuario.getNombre() + " | Edad: " + usuario.getEdad()));
         document.add(new Paragraph(" "));
 
-        // 🔽 Agregamos el registro médico si existe
         if (infoOpt.isPresent()) {
             InformacionMedica info = infoOpt.get();
             document.add(new Paragraph("Fecha de nacimiento: " + info.getFechaNacimiento()));
@@ -494,7 +493,7 @@ public class CognitivaServices {
         usuarioRepository.save(usuario);
 
         return informacionMedica;
-    }
+    }
 
 
 }
