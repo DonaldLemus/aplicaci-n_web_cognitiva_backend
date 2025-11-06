@@ -290,7 +290,8 @@ public class CognitivaServices {
             MimeMessageHelper helper = new MimeMessageHelper(message, true);
             helper.setTo(correo);
             helper.setSubject("Reporte de Estado de Ánimo");
-            helper.setText("Adjunto encontrará su reporte de estados de ánimo recientes.");
+            helper.setText("Adjunto encontrará su reporte de estados de ánimo recientes. " +
+                    "Recuerde realizar sus ejercicios cognitivos para mejorar su salud mental.");
 
             DataSource attachment = new ByteArrayDataSource(baos, "application/pdf");
             helper.addAttachment("reporte_estado_animo.pdf", attachment);
